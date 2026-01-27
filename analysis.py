@@ -1,8 +1,9 @@
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Lipinski
+from rdkit.Chem import Descriptors, Lipinski, Draw
 
-# ------------------ RULES ------------------
-
+# -----------------------------
+# Rules
+# -----------------------------
 RULES = {
     "molecular_weight": 500,
     "logp": 5,
@@ -13,27 +14,28 @@ RULES = {
 }
 
 VIOLATION_MEANINGS = {
-    "molecular_weight": {"category": "size", "issue": "Molecule may be too large for oral absorption"},
-    "logp": {"category": "lipophilicity", "issue": "Excessive hydrophobicity may reduce solubility"},
-    "hbd": {"category": "polarity", "issue": "Too many hydrogen bond donors"},
-    "hba": {"category": "polarity", "issue": "Too many hydrogen bond acceptors"},
-    "tpsa": {"category": "polarity", "issue": "High polar surface area may hinder permeability"},
-    "rotatable_bonds": {"category": "flexibility", "issue": "High molecular flexibility may reduce binding efficiency"}
+    "molecular_weight": {"category": "size", "issue": "Too large for oral absorption"},
+    "logp": {"category": "lipophilicity", "issue": "Poor solubility risk"},
+    "hbd": {"category": "polarity", "issue": "Too many H-bond donors"},
+    "hba": {"category": "polarity", "issue": "Too many H-bond acceptors"},
+    "tpsa": {"category": "polarity", "issue": "Poor membrane permeability"},
+    "rotatable_bonds": {"category": "flexibility", "issue": "Excessive flexibility"}
 }
 
 SUGGESTION_MAP = {
-    "size": ["Remove bulky substituents", "Simplify ring systems"],
-    "lipophilicity": ["Add polar functional groups", "Reduce hydrophobic substituents"],
-    "polarity": ["Reduce hydrogen bond donors/acceptors", "Use bioisosteres"],
-    "flexibility": ["Reduce rotatable bonds", "Introduce ring systems"]
+    "size": ["Remove bulky groups", "Simplify scaffold"],
+    "lipophilicity": ["Add polar groups", "Reduce alkyl chains"],
+    "polarity": ["Reduce donors/acceptors", "Use bioisosteres"],
+    "flexibility": ["Reduce rotatable bonds", "Add rings"]
 }
 
-# ------------------ CORE ANALYSIS ------------------
-
+# -----------------------------
+# Core analysis
+# -----------------------------
 def analyze_smiles(smiles):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return {"smiles": smiles, "valid": False, "error": "Invalid SMILES"}
+        return {"smiles": smiles, "valid": False}
 
     properties = {
         "molecular_weight": Descriptors.MolWt(mol),
@@ -47,37 +49,46 @@ def analyze_smiles(smiles):
     violations = []
     for prop, limit in RULES.items():
         if properties[prop] > limit:
-            meaning = VIOLATION_MEANINGS[prop]
+            v = VIOLATION_MEANINGS[prop]
             violations.append({
                 "property": prop,
                 "value": properties[prop],
                 "limit": limit,
-                "category": meaning["category"],
-                "issue": meaning["issue"],
-                "suggestions": SUGGESTION_MAP.get(meaning["category"], [])
+                "issue": v["issue"],
+                "suggestions": SUGGESTION_MAP[v["category"]]
             })
 
-    score = max(0, 100 - 15 * len(violations))
+    # -----------------------------
+    # Scoring
+    # -----------------------------
+    score = 100
+    score -= 15 * len(violations)
 
-    severe_flags = 0
-    if properties["logp"] > 6: severe_flags += 1
-    if properties["rotatable_bonds"] > 12: severe_flags += 1
-    if properties["tpsa"] < 10: severe_flags += 1
+    for prop, limit in RULES.items():
+        score -= max(0, properties[prop] - limit) * 0.1
 
+    # Hard rejection rules
     reject_reason = None
     if properties["molecular_weight"] < 150:
         reject_reason = "Too small to be a viable drug scaffold"
     if properties["hbd"] == 0 and properties["hba"] == 0:
         reject_reason = "No functional groups for target binding"
 
-    if len(violations) == 0 and score >= 85:
-        physchem_status = "OPTIMAL"
-    elif len(violations) <= 1 and score >= 75 and severe_flags == 0:
-        physchem_status = "NEAR_OPTIMAL"
+    # 🔥 CRITICAL FIX
+    if reject_reason:
+        score -= 40
+
+    score = max(score, 0)
+
+    # Status
+    if score >= 85 and not violations:
+        status = "OPTIMAL"
+    elif score >= 70:
+        status = "NEAR_OPTIMAL"
     elif score >= 50:
-        physchem_status = "POOR"
+        status = "WEAK"
     else:
-        physchem_status = "WEAK"
+        status = "POOR"
 
     decision = "REJECT" if reject_reason else "ACCEPT"
 
@@ -87,21 +98,21 @@ def analyze_smiles(smiles):
         "mol": mol,
         "properties": properties,
         "violations": violations,
-        "score": score,
-        "physchem_status": physchem_status,
+        "score": round(score, 2),
+        "physchem_status": status,
         "decision": decision,
         "reject_reason": reject_reason
     }
 
+
 def analyze_multiple_smiles(smiles_list):
     return [analyze_smiles(s) for s in smiles_list]
 
+
 def rank_molecules(results):
-    return sorted(
-        [r for r in results if r["valid"]],
-        key=lambda x: x["score"],
-        reverse=True
-    )
+    valid = [r for r in results if r["valid"]]
+    return sorted(valid, key=lambda x: x["score"], reverse=True)
+
 
 def dataset_decision(results):
     decisions = [r["decision"] for r in results]
@@ -111,10 +122,48 @@ def dataset_decision(results):
         return "ALL_ACCEPTED"
     return "MIXED"
 
-def generate_optimization_advice(molecule):
-    if not molecule["violations"]:
-        return None
+
+# -----------------------------
+# Explanation helpers
+# -----------------------------
+def explain_imperfection(mol, is_top=False, tied=False):
+    reasons = []
+
+    if mol["violations"]:
+        reasons.append("Violates one or more physicochemical drug-likeness rules")
+
+    if mol["properties"]["logp"] > 4.5:
+        reasons.append("Lipophilicity is close to the upper acceptable limit")
+
+    if mol["properties"]["rotatable_bonds"] > 8:
+        reasons.append("Molecular flexibility may reduce binding specificity")
+
+    if mol["properties"]["tpsa"] > 120:
+        reasons.append("High polarity may reduce membrane permeability")
+
+    # Clean, honest messaging
+    if not reasons:
+        if tied:
+            reasons.append(
+                "This molecule is equally optimal by all evaluated drug-likeness criteria"
+            )
+        elif is_top:
+            reasons.append(
+                "This molecule satisfies all evaluated physicochemical drug-likeness rules "
+                "and is selected as the top representative candidate in this dataset"
+            )
+        else:
+            reasons.append(
+                "This molecule is optimal by current rules but ranks below the top due to "
+                "relative differences within this dataset"
+            )
+
+    return reasons
+
+
+
+def generate_optimization_advice(mol):
     advice = []
-    for v in molecule["violations"]:
+    for v in mol["violations"]:
         advice.extend(v["suggestions"])
-    return advice
+    return list(set(advice))
