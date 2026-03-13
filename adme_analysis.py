@@ -27,6 +27,8 @@ Run directly for a demo:
 # ── Standard library ──────────────────────────────────────────────────────────
 import math
 import os
+import time
+import requests
 
 # ── RDKit ─────────────────────────────────────────────────────────────────────
 from rdkit import Chem
@@ -769,10 +771,305 @@ def compute_overall_toxicophore_summary(pains, brenk, surechembl, mutagenicity, 
 
 
 # ============================================================
+# 8e. PUBCHEM METADATA RETRIEVAL  (NEW — additive only)
+# ============================================================
+
+def get_pubchem_metadata(smiles):
+    """
+    Queries the PubChem PUG REST API using a SMILES string and retrieves
+    compound identification, naming, chemical descriptors, bioactivity
+    annotations, target information, and pharmacology data.
+
+    This function is purely additive — it does not affect any existing
+    scoring, ADME prediction, or analysis logic.
+
+    Parameters
+    ----------
+    smiles : str  — any valid SMILES string
+
+    Returns
+    -------
+    dict with the following top-level keys:
+        found           : bool — False if PubChem has no record
+        cid             : int  — PubChem compound ID
+        iupac_name      : str
+        common_name     : str  — first/preferred synonym
+        canonical_smiles: str
+        formula         : str
+        molecular_weight: float
+        inchi           : str
+        inchikey        : str
+        charge          : int
+        xlogp           : float | None
+        exact_mass      : float | None
+        synonyms        : list[str]  — up to 10
+        bioactivity     : dict  — assay counts and activity summary
+        targets         : list[str]  — protein / enzyme targets from BioAssays
+        pharmacology    : str   — pharmacology annotation (if available)
+        drug_info       : dict  — drug classification, ATC codes (if available)
+        toxicity        : list[str]  — GHS / safety annotations
+        pathways        : list[str]  — associated biological pathways
+        literature      : list[str]  — top PubMed reference titles
+        links           : dict  — URLs to PubChem pages and API endpoints
+
+    If PubChem returns no record, returns:
+        {"found": False, "error": "<reason>"}
+    """
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
+
+    def _get(url, params=None, timeout=10):
+        """Safe GET with timeout and error swallowing."""
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code == 200:
+                return r
+        except Exception:
+            pass
+        return None
+
+    def _json(url, params=None):
+        r = _get(url, params=params)
+        if r:
+            try:
+                return r.json()
+            except Exception:
+                pass
+        return {}
+
+    # ── Step 1: Resolve SMILES → CID ─────────────────────────────────────────
+    cid_url  = f"{BASE}/compound/smiles/cids/JSON"
+    cid_resp = _json(cid_url, params={"smiles": smiles})
+    cids     = cid_resp.get("IdentifierList", {}).get("CID", [])
+
+    if not cids:
+        return {"found": False, "error": "Compound not found in PubChem database."}
+
+    cid = int(cids[0])
+
+    # ── Step 2: Core property table ───────────────────────────────────────────
+    props_wanted = (
+        "IUPACName,MolecularFormula,MolecularWeight,CanonicalSMILES,"
+        "InChI,InChIKey,Charge,XLogP,ExactMass,MonoisotopicMass"
+    )
+    prop_url  = f"{BASE}/compound/cid/{cid}/property/{props_wanted}/JSON"
+    prop_data = _json(prop_url).get("PropertyTable", {}).get("Properties", [{}])[0]
+
+    # ── Step 3: Synonyms ──────────────────────────────────────────────────────
+    syn_url   = f"{BASE}/compound/cid/{cid}/synonyms/JSON"
+    syn_data  = _json(syn_url)
+    all_syns  = (syn_data.get("InformationList", {})
+                         .get("Information", [{}])[0]
+                         .get("Synonym", []))
+    synonyms     = all_syns[:10]
+    common_name  = all_syns[0] if all_syns else prop_data.get("IUPACName", "")
+
+    # ── Step 4: Bioassay activity summary ─────────────────────────────────────
+    # Returns counts of active / inactive / tested assays
+    assay_url  = f"{BASE}/compound/cid/{cid}/assaysummary/JSON"
+    assay_resp = _get(assay_url)
+    bioactivity = {"assay_count": 0, "active_count": 0, "inactive_count": 0,
+                   "note": "No bioassay data retrieved."}
+    if assay_resp:
+        try:
+            assay_json = assay_resp.json()
+            table      = assay_json.get("Table", {})
+            cols       = [c.get("Name","") for c in table.get("Column", [])]
+            rows       = table.get("Row", [])
+            bioactivity["assay_count"]    = len(rows)
+            bioactivity["note"]           = f"{len(rows)} bioassay record(s) found."
+            # Count outcomes if the 'Activity Outcome' column exists
+            if "Activity Outcome" in cols:
+                idx = cols.index("Activity Outcome")
+                outcomes = [r.get("Cell", [])[idx] if len(r.get("Cell",[])) > idx else ""
+                            for r in rows]
+                bioactivity["active_count"]   = outcomes.count("Active")
+                bioactivity["inactive_count"] = outcomes.count("Inactive")
+        except Exception:
+            pass
+
+    # ── Step 5: Protein / enzyme targets via BioAssay descriptions ────────────
+    # PubChem does not expose a direct /targets endpoint for small molecules,
+    # so we pull the BioAssay target gene names via the compound→assay API.
+    targets = []
+    target_url  = f"{BASE}/compound/cid/{cid}/aids/JSON"
+    target_resp = _json(target_url)
+    aids        = target_resp.get("IdentifierList", {}).get("AID", [])[:5]  # cap at 5 assays
+    for aid in aids:
+        desc_url  = f"{BASE}/assay/aid/{aid}/description/JSON"
+        desc_resp = _json(desc_url)
+        info      = (desc_resp.get("PC_AssayContainer", [{}])[0]
+                               .get("assay", {})
+                               .get("descr", {}))
+        target_list = info.get("target", [])
+        for t in target_list:
+            name = t.get("name", "")
+            if name and name not in targets:
+                targets.append(name)
+        time.sleep(0.05)   # be polite to the PubChem rate limiter
+
+    # ── Step 6: Pharmacology annotation (PubChem annotation API) ─────────────
+    pharmacology = ""
+    anno_url  = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/annotations/"
+                 f"heading/JSON?source=all&heading_type=Compound&cid={cid}"
+                 f"&heading=Pharmacology+and+Biochemistry")
+    anno_resp = _get(anno_url, timeout=12)
+    if anno_resp:
+        try:
+            anno_json   = anno_resp.json()
+            annotations = anno_json.get("Annotations", {}).get("Annotation", [])
+            for ann in annotations[:3]:
+                for data in ann.get("Data", []):
+                    val = data.get("Value", {})
+                    for sv in val.get("StringWithMarkup", []):
+                        text = sv.get("String", "").strip()
+                        if text:
+                            pharmacology = text
+                            break
+                if pharmacology:
+                    break
+        except Exception:
+            pass
+
+    # ── Step 7: Drug classification / ATC codes (DrugBank via PubChem) ────────
+    drug_info = {}
+    class_url  = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/"
+                  f"{cid}/JSON?heading=Drug+and+Medication+Information")
+    class_resp = _get(class_url, timeout=12)
+    if class_resp:
+        try:
+            cj = class_resp.json()
+            sections = (cj.get("Record", {})
+                          .get("Section", []))
+            for sec in sections:
+                if "Drug" in sec.get("TOCHeading", ""):
+                    for subsec in sec.get("Section", []):
+                        heading = subsec.get("TOCHeading", "")
+                        infos   = []
+                        for item in subsec.get("Information", []):
+                            for sv in item.get("Value", {}).get("StringWithMarkup", []):
+                                s = sv.get("String","").strip()
+                                if s:
+                                    infos.append(s)
+                        if infos:
+                            drug_info[heading] = infos[:5]
+        except Exception:
+            pass
+
+    # ── Step 8: GHS / toxicity safety annotations ─────────────────────────────
+    toxicity = []
+    ghs_url  = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/"
+                f"{cid}/JSON?heading=Safety+and+Hazards")
+    ghs_resp = _get(ghs_url, timeout=12)
+    if ghs_resp:
+        try:
+            gj = ghs_resp.json()
+            for sec in gj.get("Record", {}).get("Section", []):
+                for subsec in sec.get("Section", []):
+                    for item in subsec.get("Information", []):
+                        for sv in item.get("Value", {}).get("StringWithMarkup", []):
+                            s = sv.get("String","").strip()
+                            if s and s not in toxicity:
+                                toxicity.append(s)
+                            if len(toxicity) >= 10:
+                                break
+        except Exception:
+            pass
+
+    # ── Step 9: Biological pathways (via PubChem pathway endpoint) ────────────
+    pathways = []
+    pw_url   = f"{BASE}/compound/cid/{cid}/xrefs/PathwayID/JSON"
+    pw_resp  = _json(pw_url)
+    pw_ids   = (pw_resp.get("InformationList", {})
+                       .get("Information", [{}])[0]
+                       .get("PathwayID", []))[:8]
+    pathways = pw_ids   # raw pathway IDs (e.g. "hsa00010"); names need extra call
+
+    # Try to resolve pathway names
+    if pw_ids:
+        pw_name_url = f"{BASE}/compound/cid/{cid}/xrefs/PatentID/JSON"
+        named = []
+        for pwid in pw_ids[:5]:
+            # KEGG-style pathway names via a summary annotation call
+            kurl  = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/annotations/"
+                     f"heading/JSON?cid={cid}&heading=Pathways")
+            kr    = _get(kurl, timeout=8)
+            if kr:
+                try:
+                    kj = kr.json()
+                    for ann in kj.get("Annotations", {}).get("Annotation", [])[:5]:
+                        for d in ann.get("Data", []):
+                            for sv in d.get("Value", {}).get("StringWithMarkup", []):
+                                t = sv.get("String","").strip()
+                                if t and t not in named:
+                                    named.append(t)
+                except Exception:
+                    pass
+            break   # one call is enough — all names come back at once
+        if named:
+            pathways = named[:8]
+
+    # ── Step 10: PubMed literature references ─────────────────────────────────
+    literature = []
+    lit_url    = f"{BASE}/compound/cid/{cid}/xrefs/PubMedID/JSON"
+    lit_resp   = _json(lit_url)
+    pmids      = (lit_resp.get("InformationList", {})
+                          .get("Information", [{}])[0]
+                          .get("PubMedID", []))[:5]
+
+    for pmid in pmids:
+        esummary = (f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+                    f"?db=pubmed&id={pmid}&retmode=json")
+        er = _json(esummary)
+        try:
+            title = (er.get("result", {})
+                       .get(str(pmid), {})
+                       .get("title", ""))
+            if title:
+                literature.append(f"PMID {pmid}: {title}")
+        except Exception:
+            pass
+        time.sleep(0.05)
+
+    # ── Assemble output ───────────────────────────────────────────────────────
+    return {
+        "found":            True,
+        "cid":              cid,
+        "iupac_name":       prop_data.get("IUPACName", ""),
+        "common_name":      common_name,
+        "canonical_smiles": prop_data.get("CanonicalSMILES", ""),
+        "formula":          prop_data.get("MolecularFormula", ""),
+        "molecular_weight": prop_data.get("MolecularWeight"),
+        "inchi":            prop_data.get("InChI", ""),
+        "inchikey":         prop_data.get("InChIKey", ""),
+        "charge":           prop_data.get("Charge"),
+        "xlogp":            prop_data.get("XLogP"),
+        "exact_mass":       prop_data.get("ExactMass"),
+        "monoisotopic_mass":prop_data.get("MonoisotopicMass"),
+        "synonyms":         synonyms,
+        "bioactivity":      bioactivity,
+        "targets":          targets,
+        "pharmacology":     pharmacology,
+        "drug_info":        drug_info,
+        "toxicity":         toxicity,
+        "pathways":         pathways,
+        "literature":       literature,
+        "links": {
+            "compound_page":  f"https://pubchem.ncbi.nlm.nih.gov/compound/{cid}",
+            "structure_image":f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/PNG",
+            "sdf_download":   f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/SDF",
+            "json_api":       f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/JSON",
+        },
+    }
+
+
+# ============================================================
 # 9. MASTER ANALYSIS PIPELINE
 # ============================================================
 
-def analyze_smiles(smiles, output_path=None, show=False):
+def analyze_smiles(smiles, output_path=None, show=False, fetch_pubchem=True):
     """
     Full ADME analysis pipeline.
 
@@ -781,7 +1078,10 @@ def analyze_smiles(smiles, output_path=None, show=False):
     smiles      : SMILES string of the molecule to analyse
     output_path : optional path to save a PNG visual report,
                   e.g. "report.png". If None, no chart is generated.
-    show        : if True, call plt.show() (requires a GUI display)
+    show          : if True, call plt.show() (requires a GUI display)
+    fetch_pubchem : if True (default), query the PubChem API for compound
+                    metadata. Set to False for fast batch runs where the
+                    extra network latency is unwanted.
 
     Returns
     -------
@@ -868,6 +1168,9 @@ def analyze_smiles(smiles, output_path=None, show=False):
         "brenk":               brenk_alerts,
         "surechembl":          surechembl_alerts,
         "toxicophore_summary": toxicophore_summary,
+        # PubChem enrichment (fetched live; opt-out with fetch_pubchem=False)
+        "pubchem_metadata":    get_pubchem_metadata(smiles) if fetch_pubchem
+                               else {"found": False, "error": "PubChem lookup skipped (fetch_pubchem=False)."},
     }
 
     # Auto-generate the visual report if caller supplied a path
@@ -881,20 +1184,22 @@ def analyze_smiles(smiles, output_path=None, show=False):
 # 10. DATASET-LEVEL UTILITIES
 # ============================================================
 
-def analyze_multiple_smiles(smiles_list, output_dir=None):
+def analyze_multiple_smiles(smiles_list, output_dir=None, fetch_pubchem=False):
     """
     Analyse a list of SMILES strings.
 
     Parameters
     ----------
-    smiles_list : list of SMILES strings
-    output_dir  : optional directory — if provided, a PNG report is saved
-                  for each valid molecule as <output_dir>/adme_report_<i>.png
+    smiles_list   : list of SMILES strings
+    output_dir    : optional directory — if provided, a PNG report is saved
+                    for each valid molecule as <output_dir>/adme_report_<i>.png
+    fetch_pubchem : if True, query PubChem for each molecule (slow — one network
+                    round-trip per molecule). Defaults to False for batch speed.
     """
     results = []
     for i, smiles in enumerate(smiles_list):
         out = os.path.join(output_dir, f"adme_report_{i}.png") if output_dir else None
-        results.append(analyze_smiles(smiles, output_path=out))
+        results.append(analyze_smiles(smiles, output_path=out, fetch_pubchem=fetch_pubchem))
     return results
 
 

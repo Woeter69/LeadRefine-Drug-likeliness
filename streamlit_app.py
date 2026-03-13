@@ -96,6 +96,13 @@ with st.sidebar:
 
     mode = st.radio("Mode", ["Single molecule", "Batch (multiple SMILES)"])
 
+    fetch_pubchem = st.toggle(
+        "🔗 Fetch PubChem data",
+        value=True,
+        help=("Queries the PubChem API for compound names, bioactivity, targets, etc. "
+              "Turn OFF for instant results — especially useful in Batch mode."),
+    )
+
     st.markdown("---")
     st.markdown("**Demo molecules**")
     demos = {
@@ -132,7 +139,7 @@ if mode == "Single molecule":
 
     if analyse_btn and smiles_input.strip():
         with st.spinner("Running ADME analysis…"):
-            result = analyze_smiles(smiles_input.strip())
+            result = analyze_smiles(smiles_input.strip(), fetch_pubchem=fetch_pubchem)
 
         if not result["valid"]:
             st.error("❌ Invalid SMILES string — could not parse molecule.")
@@ -175,12 +182,13 @@ if mode == "Single molecule":
         st.markdown("---")
         st.subheader("🔬 Detailed Breakdown")
 
-        tab_phys, tab_metab, tab_tox, tab_adme, tab_advice = st.tabs([
+        tab_phys, tab_metab, tab_tox, tab_adme, tab_advice, tab_pubchem = st.tabs([
             "Physicochemical",
             "Metabolic Stability",
             "Toxicophores",
             "ADME Properties",
             "Optimisation Advice",
+            "🔗 PubChem Information",
         ])
 
         # ── Tab 1: Physicochemical ────────────────────────────────────────────
@@ -380,6 +388,120 @@ if mode == "Single molecule":
                     icon = "⚠️" if a.startswith("PRIORITY") else "▸"
                     st.markdown(f"{icon} {a}")
 
+        # ── Tab 6: PubChem Information ────────────────────────────────────────
+        with tab_pubchem:
+            pc = result.get("pubchem_metadata", {})
+
+            if not pc.get("found"):
+                st.warning(
+                    f"⚠️ {pc.get('error', 'Compound not found in PubChem database.')}"
+                )
+            else:
+                # ── Identity header ───────────────────────────────────────────
+                cid        = pc["cid"]
+                name       = pc["common_name"] or pc["iupac_name"] or f"CID {cid}"
+                img_url    = pc["links"]["structure_image"]
+                page_url   = pc["links"]["compound_page"]
+
+                col_img, col_id = st.columns([1, 3])
+                with col_img:
+                    st.image(img_url, width=180, caption=f"CID {cid}")
+                with col_id:
+                    st.markdown(f"## {name}")
+                    st.markdown(
+                        f"**Formula:** `{pc['formula']}`  &nbsp;|&nbsp;  "
+                        f"**MW:** {pc['molecular_weight']} Da  &nbsp;|&nbsp;  "
+                        f"**Charge:** {pc['charge']}"
+                    )
+                    if pc.get("xlogp") is not None:
+                        st.markdown(f"**XLogP (PubChem):** {pc['xlogp']}")
+                    if pc.get("exact_mass"):
+                        st.markdown(f"**Exact mass:** {pc['exact_mass']} Da")
+                    st.markdown(
+                        f"🔗 [View on PubChem]({page_url})"
+                    )
+
+                st.markdown("---")
+
+                # ── Chemical identifiers ──────────────────────────────────────
+                with st.expander("🔑 Chemical Identifiers", expanded=True):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown(f"**CID:** `{cid}`")
+                        st.markdown(f"**IUPAC name:**  \n`{pc['iupac_name']}`")
+                        st.markdown(f"**Canonical SMILES:**  \n`{pc['canonical_smiles']}`")
+                    with col_b:
+                        st.markdown(f"**InChIKey:** `{pc['inchikey']}`")
+                        if pc.get("inchi"):
+                            st.text_area("InChI", value=pc["inchi"],
+                                         height=68, disabled=True)
+
+                # ── Synonyms ──────────────────────────────────────────────────
+                if pc["synonyms"]:
+                    with st.expander("🏷️ Synonyms & Common Names"):
+                        cols = st.columns(2)
+                        for i, syn in enumerate(pc["synonyms"]):
+                            cols[i % 2].markdown(f"- {syn}")
+
+                # ── Pharmacology ──────────────────────────────────────────────
+                if pc.get("pharmacology"):
+                    with st.expander("💊 Pharmacology & Biochemistry", expanded=True):
+                        st.markdown(pc["pharmacology"])
+
+                # ── Drug classification ───────────────────────────────────────
+                if pc.get("drug_info"):
+                    with st.expander("🏥 Drug & Medication Information"):
+                        for heading, items in pc["drug_info"].items():
+                            st.markdown(f"**{heading}**")
+                            for item in items:
+                                st.markdown(f"- {item}")
+
+                # ── Bioactivity ───────────────────────────────────────────────
+                with st.expander("🧪 Bioactivity Summary"):
+                    ba = pc["bioactivity"]
+                    b1, b2, b3 = st.columns(3)
+                    b1.metric("Assays tested",    ba.get("assay_count", 0))
+                    b2.metric("Active outcomes",  ba.get("active_count", 0))
+                    b3.metric("Inactive outcomes",ba.get("inactive_count", 0))
+                    st.caption(ba.get("note", ""))
+
+                # ── Protein targets ───────────────────────────────────────────
+                if pc.get("targets"):
+                    with st.expander("🎯 Known Protein / Enzyme Targets"):
+                        for t in pc["targets"]:
+                            st.markdown(f"- {t}")
+                else:
+                    with st.expander("🎯 Known Protein / Enzyme Targets"):
+                        st.caption("No target data retrieved from PubChem BioAssays.")
+
+                # ── Pathways ──────────────────────────────────────────────────
+                if pc.get("pathways"):
+                    with st.expander("🔄 Biological Pathways"):
+                        for pw in pc["pathways"]:
+                            st.markdown(f"- {pw}")
+
+                # ── Toxicity / safety ─────────────────────────────────────────
+                if pc.get("toxicity"):
+                    with st.expander("⚠️ Safety & Toxicity Annotations"):
+                        for tox in pc["toxicity"]:
+                            st.markdown(f"- {tox}")
+
+                # ── Literature ────────────────────────────────────────────────
+                if pc.get("literature"):
+                    with st.expander("📚 PubMed Literature References"):
+                        for ref in pc["literature"]:
+                            st.markdown(f"- {ref}")
+
+                # ── Download links ────────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("**Downloads & External Links**")
+                lk = pc["links"]
+                st.markdown(
+                    f"[🌐 PubChem Compound Page]({lk['compound_page']})  &nbsp;|&nbsp;  "
+                    f"[📄 Download SDF]({lk['sdf_download']})  &nbsp;|&nbsp;  "
+                    f"[🔌 JSON API]({lk['json_api']})"
+                )
+
 
 # ── Batch mode ────────────────────────────────────────────────────────────────
 else:
@@ -396,7 +518,7 @@ else:
         smiles_list = [s.strip() for s in batch_input.strip().splitlines() if s.strip()]
 
         with st.spinner(f"Analysing {len(smiles_list)} molecule(s)…"):
-            results = analyze_multiple_smiles(smiles_list)
+            results = analyze_multiple_smiles(smiles_list, fetch_pubchem=fetch_pubchem)
 
         valid   = [r for r in results if r["valid"]]
         invalid = [r for r in results if not r["valid"]]
