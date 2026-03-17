@@ -18,53 +18,611 @@ from adme_analysis import (
 )
 from literature_intelligence import get_literature_intelligence
 
-st.set_page_config(page_title="ADME Analyzer", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="LeadRefine · ADME Analyzer", page_icon="🧬", layout="wide")
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-.main { background-color: #0D1117; }
-.stTextInput > div > div > input,
-.stTextArea  > div > div > textarea {
-    background-color: #161B22; color: #E6EDF3;
-    border: 1px solid #30363D; border-radius: 6px; font-family: monospace;
-}
-.sec-head {
-    font-size: 1.22rem; font-weight: 700; color: #58A6FF;
-    border-bottom: 1px solid #30363D; padding-bottom: 4px;
-    margin: 1.2rem 0 0.5rem 0;
-}
-.sub-head { font-size: 1.0rem; font-weight: 600; color: #E6EDF3; margin: 0.7rem 0 0.25rem 0; }
-.gloss-term { font-weight: 700; color: #58A6FF; }
-.gloss-def  { color: #C9D1D9; font-size: 0.92rem; }
-.pubchem-name { font-size: 1.5rem; font-weight: 800; color: #E6EDF3; margin-bottom: 4px; }
-.pubchem-meta { font-size: 0.97rem; color: #8B949E; }
-.info-pill {
-    display:inline-block; background:#21262D; border:1px solid #30363D;
-    border-radius:20px; padding:2px 11px; margin:3px 3px;
-    font-size:0.82rem; color:#C9D1D9;
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Design Tokens ──────────────────────────────────────────── */
+:root {
+    --bg:          #05070F;
+    --surface:     #0C1220;
+    --card:        #0F1825;
+    --card-hi:     #131F30;
+    --border:      #1A2840;
+    --border-hi:   #253B5C;
+    --accent:      #00C8E8;
+    --accent2:     #F5A623;
+    --accent3:     #9B71F0;
+    --accent-glow: rgba(0, 200, 232, 0.18);
+    --text:        #EDF4FF;
+    --text-muted:  #7A8FA8;
+    --text-dim:    #3D5068;
+    --success:     #22C983;
+    --danger:      #F05252;
+    --warning:     #F5A623;
+    --font-head:   'Syne', sans-serif;
+    --font-body:   'Plus Jakarta Sans', sans-serif;
+    --font-mono:   'JetBrains Mono', monospace;
+    --radius:      12px;
+    --radius-sm:   8px;
+    --radius-pill: 30px;
 }
 
-/* ── Literature Intelligence ──────────────────────────────────────────────── */
-.lit-header { font-size:1.25rem; font-weight:800; color:#E6EDF3;
-    border-bottom:2px solid #30363D; padding-bottom:6px; margin:1.6rem 0 0.3rem 0; }
-.lit-sub { font-size:0.86rem; color:#8B949E; margin-bottom:1rem; }
-.lit-source { font-size:0.75rem; color:#3FB950; font-weight:600; }
-.lit-cat { font-size:1rem; font-weight:700; padding-left:4px;
-    border-left:3px solid var(--ac); color:var(--ac);
-    margin:1rem 0 0.3rem 0; }
-.lit-card { background:#161B22; border:1px solid #30363D; border-radius:8px;
-    padding:10px 14px; margin-bottom:7px; }
-.lit-card:hover { border-color:#58A6FF; }
-.lit-title { font-size:0.92rem; font-weight:600; color:#E6EDF3;
-    margin-bottom:2px; line-height:1.35; }
-.lit-meta { font-size:0.78rem; color:#8B949E; }
-.lit-abs { font-size:0.77rem; color:#8B949E; font-style:italic;
-    margin-top:4px; line-height:1.4; }
-.lit-pill { display:inline-block; background:#21262D; border:1px solid #30363D;
-    border-radius:14px; padding:2px 11px; margin:2px; font-size:0.78rem; color:#C9D1D9; }
-.lit-empty { background:#161B22; border:1px dashed #30363D; border-radius:8px;
-    padding:18px; text-align:center; color:#8B949E; font-size:0.9rem; }
+/* ── Base ───────────────────────────────────────────────────── */
+html, body, .stApp, [data-testid="stAppViewContainer"] {
+    background-color: var(--bg) !important;
+    font-family: var(--font-body) !important;
+    color: var(--text) !important;
+}
+.main .block-container {
+    padding: 2.2rem 3rem 5rem !important;
+    max-width: 1380px !important;
+}
+
+/* ── Typography ─────────────────────────────────────────────── */
+h1 {
+    font-family: var(--font-head) !important;
+    font-size: 2.55rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(125deg, #00C8E8 0%, #9B71F0 55%, #F5A623 100%);
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+    letter-spacing: -0.6px !important;
+    line-height: 1.15 !important;
+    margin-bottom: 0.4rem !important;
+}
+h2, h3 {
+    font-family: var(--font-head) !important;
+    color: var(--text) !important;
+}
+p, li {
+    font-family: var(--font-body) !important;
+    color: var(--text) !important;
+    font-size: 0.92rem !important;
+    line-height: 1.68 !important;
+}
+code {
+    font-family: var(--font-mono) !important;
+    background: var(--surface) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 5px !important;
+    padding: 2px 8px !important;
+    font-size: 0.82rem !important;
+}
+hr {
+    border: none !important;
+    border-top: 1px solid var(--border) !important;
+    margin: 1.8rem 0 !important;
+}
+
+/* ── Sidebar ────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #060A14 0%, #08111F 100%) !important;
+    border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] * {
+    font-family: var(--font-body) !important;
+}
+[data-testid="stSidebar"] .stMarkdown h2 {
+    font-family: var(--font-head) !important;
+    font-size: 1.1rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    background-clip: text !important;
+    letter-spacing: 0.3px !important;
+    margin-bottom: 0 !important;
+}
+[data-testid="stSidebar"] .stRadio label span {
+    font-size: 0.88rem !important;
+    color: var(--text-muted) !important;
+    font-weight: 500 !important;
+}
+[data-testid="stSidebar"] .stSelectbox label {
+    font-size: 0.74rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    color: var(--text-dim) !important;
+}
+[data-testid="stSidebar"] .stCaption p {
+    font-size: 0.74rem !important;
+    color: var(--text-dim) !important;
+    line-height: 1.5 !important;
+}
+
+/* ── Inputs ─────────────────────────────────────────────────── */
+.stTextInput > div > div > input,
+.stTextArea  > div > div > textarea {
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+    border: 1.5px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    font-family: var(--font-mono) !important;
+    font-size: 0.86rem !important;
+    padding: 12px 16px !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+}
+.stTextInput > div > div > input:focus,
+.stTextArea  > div > div > textarea:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+    outline: none !important;
+}
+.stTextInput > label, .stTextArea > label {
+    font-family: var(--font-body) !important;
+    font-size: 0.76rem !important;
+    font-weight: 700 !important;
+    color: var(--text-dim) !important;
+    letter-spacing: 0.8px !important;
+    text-transform: uppercase !important;
+    margin-bottom: 6px !important;
+}
+.stTextArea > div > div > textarea::placeholder,
+.stTextInput > div > div > input::placeholder {
+    color: var(--text-dim) !important;
+    font-family: var(--font-mono) !important;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+.stButton > button {
+    font-family: var(--font-head) !important;
+    font-weight: 700 !important;
+    font-size: 0.88rem !important;
+    letter-spacing: 0.4px !important;
+    border-radius: var(--radius) !important;
+    padding: 10px 22px !important;
+    border: 1.5px solid var(--border) !important;
+    background: var(--surface) !important;
+    color: var(--text-muted) !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+}
+.stButton > button:hover {
+    background: var(--card-hi) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+    box-shadow: 0 0 18px var(--accent-glow) !important;
+    transform: translateY(-1px) !important;
+}
+[data-testid="baseButton-primary"] {
+    background: linear-gradient(130deg, #0090AA 0%, #6B46D9 100%) !important;
+    border: none !important;
+    color: #fff !important;
+    box-shadow: 0 4px 22px rgba(0, 200, 232, 0.28) !important;
+    font-size: 0.92rem !important;
+    padding: 12px 28px !important;
+}
+[data-testid="baseButton-primary"]:hover {
+    background: linear-gradient(130deg, #00B8D4 0%, #8B5CF6 100%) !important;
+    box-shadow: 0 6px 32px rgba(0, 200, 232, 0.42) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* ── Download Button ────────────────────────────────────────── */
+.stDownloadButton > button {
+    font-family: var(--font-body) !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    background: transparent !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-muted) !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 8px 16px !important;
+    transition: all 0.2s !important;
+}
+.stDownloadButton > button:hover {
+    border-color: var(--accent2) !important;
+    color: var(--accent2) !important;
+    background: rgba(245, 166, 35, 0.06) !important;
+}
+
+/* ── Toggle ─────────────────────────────────────────────────── */
+.stToggle label p {
+    font-family: var(--font-body) !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    color: var(--text) !important;
+}
+
+/* ── Select ─────────────────────────────────────────────────── */
+.stSelectbox > div > div {
+    background: var(--surface) !important;
+    border: 1.5px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    color: var(--text) !important;
+    font-family: var(--font-body) !important;
+    font-size: 0.88rem !important;
+}
+
+/* ── Metrics ────────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    padding: 18px 20px !important;
+    position: relative !important;
+    overflow: hidden !important;
+    transition: border-color 0.25s, transform 0.2s !important;
+}
+[data-testid="stMetric"]:hover {
+    border-color: var(--accent) !important;
+    transform: translateY(-2px) !important;
+}
+[data-testid="stMetric"]::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    border-radius: 14px 14px 0 0;
+}
+[data-testid="stMetricLabel"] p {
+    font-family: var(--font-body) !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1px !important;
+    color: var(--text-muted) !important;
+}
+[data-testid="stMetricValue"] {
+    font-family: var(--font-head) !important;
+    font-size: 1.55rem !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+}
+
+/* ── Expanders ──────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    background: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    margin-bottom: 10px !important;
+    overflow: hidden !important;
+    transition: border-color 0.2s !important;
+}
+[data-testid="stExpander"]:hover {
+    border-color: var(--border-hi) !important;
+}
+[data-testid="stExpander"] summary {
+    font-family: var(--font-body) !important;
+    font-weight: 600 !important;
+    font-size: 0.92rem !important;
+    color: var(--text) !important;
+    padding: 14px 18px !important;
+}
+[data-testid="stExpanderDetails"] {
+    padding: 4px 18px 18px !important;
+    border-top: 1px solid var(--border) !important;
+}
+
+/* ── Progress bar ───────────────────────────────────────────── */
+.stProgress > div > div {
+    background: var(--border) !important;
+    border-radius: 4px !important;
+    height: 5px !important;
+}
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, var(--accent), var(--accent3)) !important;
+    border-radius: 4px !important;
+    transition: width 0.3s ease !important;
+}
+
+/* ── Alerts ─────────────────────────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: var(--radius) !important;
+    font-family: var(--font-body) !important;
+    font-size: 0.88rem !important;
+}
+
+/* ── Caption ────────────────────────────────────────────────── */
+.stCaption p {
+    color: var(--text-dim) !important;
+    font-size: 0.76rem !important;
+    font-family: var(--font-body) !important;
+}
+
+/* ── DataFrames ─────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    overflow: hidden !important;
+}
+
+/* ── Spinner ────────────────────────────────────────────────── */
+[data-testid="stSpinner"] > div {
+    border-top-color: var(--accent) !important;
+}
+
+/* ── ──────────────────────────────────────────────────────── */
+/* CUSTOM HTML COMPONENT CLASSES                               */
+/* ─────────────────────────────────────────────────────────── */
+
+/* Section headings */
+.sec-head {
+    font-family: var(--font-head);
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 0 10px;
+    margin: 1.6rem 0 0.7rem;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 0.2px;
+}
+.sub-head {
+    font-family: var(--font-head);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 1rem 0 0.35rem;
+}
+
+/* Glossary */
+.gloss-term {
+    font-family: var(--font-head);
+    font-weight: 700;
+    font-size: 0.87rem;
+    color: var(--accent);
+    display: block;
+    margin-top: 0.7rem;
+}
+.gloss-def {
+    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-size: 0.81rem;
+    line-height: 1.65;
+}
+
+/* PubChem block */
+.pubchem-name {
+    font-family: var(--font-head);
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 6px;
+    letter-spacing: -0.4px;
+    line-height: 1.2;
+}
+.pubchem-meta {
+    font-family: var(--font-body);
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    line-height: 1.85;
+}
+.info-pill {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    padding: 3px 13px;
+    margin: 3px 3px;
+    font-family: var(--font-body);
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    transition: border-color 0.15s, color 0.15s;
+    cursor: default;
+}
+.info-pill:hover { border-color: var(--accent); color: var(--text); }
+
+/* ── Literature Intelligence ────────────────────────────────── */
+.lit-header {
+    font-family: var(--font-head);
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--text);
+    border-bottom: 1.5px solid var(--border);
+    padding-bottom: 9px;
+    margin: 1.8rem 0 0.4rem;
+    letter-spacing: -0.2px;
+}
+.lit-sub {
+    font-family: var(--font-body);
+    font-size: 0.81rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    line-height: 1.6;
+}
+.lit-source {
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    color: var(--success);
+    font-weight: 600;
+}
+.lit-cat {
+    font-family: var(--font-head);
+    font-size: 0.92rem;
+    font-weight: 700;
+    padding-left: 9px;
+    border-left: 3px solid var(--ac);
+    color: var(--ac);
+    margin: 1.3rem 0 0.4rem;
+}
+.lit-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s, transform 0.15s;
+}
+.lit-card:hover {
+    border-color: var(--border-hi);
+    transform: translateX(3px);
+}
+.lit-title {
+    font-family: var(--font-body);
+    font-size: 0.89rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 3px;
+    line-height: 1.4;
+}
+.lit-meta {
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+.lit-abs {
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 5px;
+    line-height: 1.5;
+}
+.lit-pill {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 3px 12px;
+    margin: 3px;
+    font-family: var(--font-body);
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+.lit-empty {
+    background: var(--card);
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 26px;
+    text-align: center;
+    font-family: var(--font-body);
+    color: var(--text-muted);
+    font-size: 0.88rem;
+}
+
+/* ── Scope / Warning Banners ────────────────────────────────── */
+.scope-banner {
+    background: linear-gradient(135deg,
+        rgba(0,200,232,0.04) 0%,
+        rgba(155,113,240,0.04) 100%);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin-bottom: 16px;
+}
+.scope-title {
+    font-family: var(--font-head);
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+    letter-spacing: 0.3px;
+}
+.scope-body {
+    font-family: var(--font-body);
+    font-size: 0.81rem;
+    color: var(--text-muted);
+    line-height: 1.75;
+}
+.oos-banner {
+    background: rgba(245, 166, 35, 0.04);
+    border: 1px solid rgba(245, 166, 35, 0.5);
+    border-left: 4px solid var(--warning);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    margin: 14px 0;
+}
+.oos-title {
+    font-family: var(--font-head);
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--warning);
+    margin-bottom: 8px;
+}
+.oos-item {
+    font-family: var(--font-body);
+    font-size: 0.81rem;
+    color: var(--text);
+    margin-bottom: 5px;
+    line-height: 1.55;
+}
+.oos-footer {
+    font-family: var(--font-body);
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+/* ── Brand badge ─────────────────────────────────────────────── */
+.brand-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    padding: 4px 14px 4px 10px;
+    margin-bottom: 14px;
+    font-family: var(--font-body);
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.4px;
+}
+.brand-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 7px var(--success);
+    display: inline-block;
+    animation: blink 2.4s ease-in-out infinite;
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+/* ── Sidebar custom brand ────────────────────────────────────── */
+.sb-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+.sb-icon {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #0891B2, #7C3AED);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.sb-name {
+    font-family: var(--font-head);
+    font-size: 1.05rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 0.2px;
+}
+.sb-tagline {
+    font-family: var(--font-body);
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+.sb-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 14px 0;
+}
 
 </style>
 """, unsafe_allow_html=True)
@@ -78,9 +636,10 @@ def fig_to_bytes(fig, dpi=300):
     return buf.read()
 
 def risk_icon(val):
-    return {"HIGH":"🟠","CRITICAL":"🔴","MODERATE":"🟡","LOW":"🟢",
-            "CLEAN":"🟢","POSITIVE":"🔴","NEGATIVE":"🟢","FLAGGED":"🟠"
-            }.get(str(val).upper(), "⚪")
+    return {
+        "HIGH":     "🟠", "CRITICAL": "🔴", "MODERATE": "🟡", "LOW":      "🟢",
+        "CLEAN":    "🟢", "POSITIVE": "🔴", "NEGATIVE": "🟢", "FLAGGED":  "🟠"
+    }.get(str(val).upper(), "⚪")
 
 def sh(t):  return f'<p class="sec-head">{t}</p>'
 def sub(t): return f'<p class="sub-head">{t}</p>'
@@ -204,13 +763,13 @@ def render_pubchem(pc):
         st.markdown(f'<div class="pubchem-name">{name}</div>', unsafe_allow_html=True)
         meta = (
             f'Formula: <b>{pc.get("formula","")}</b> &nbsp;|&nbsp; '
-            f'MW: <b>{pc.get("molecular_weight","")} Da</b> &nbsp;|&nbsp; '
+            f'MW: <b>{pc.get("molecular_weight","")}&thinsp;Da</b> &nbsp;|&nbsp; '
             f'Charge: <b>{pc.get("charge","")}</b>'
         )
         if pc.get("xlogp") is not None:
             meta += f' &nbsp;|&nbsp; XLogP: <b>{pc["xlogp"]}</b>'
         if pc.get("exact_mass"):
-            meta += f' &nbsp;|&nbsp; Exact mass: <b>{pc["exact_mass"]} Da</b>'
+            meta += f' &nbsp;|&nbsp; Exact mass: <b>{pc["exact_mass"]}&thinsp;Da</b>'
         st.markdown(f'<div class="pubchem-meta">{meta}</div>', unsafe_allow_html=True)
         st.markdown(
             f'🔗 **[Open on PubChem]({pc["links"]["compound_page"]})**'
@@ -410,19 +969,18 @@ def render_panels(result, key_prefix=""):
         st.markdown("")
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # LITERATURE INTELLIGENCE
 # ══════════════════════════════════════════════════════════════════════════════
 
 _LIT_CATS = {
-    "Metabolism":   ("⚗️",  "#58A6FF"),
-    "Toxicity":     ("☠️",  "#F85149"),
-    "Resistance":   ("🛡️", "#D29922"),
-    "Pharmacology": ("💊",  "#3FB950"),
-    "Clinical":     ("🏥",  "#BC8CFF"),
+    "Metabolism":   ("⚗️",  "#00C8E8"),
+    "Toxicity":     ("☠️",  "#F05252"),
+    "Resistance":   ("🛡️", "#F5A623"),
+    "Pharmacology": ("💊",  "#22C983"),
+    "Clinical":     ("🏥",  "#9B71F0"),
     "Synthesis":    ("🔬",  "#F97316"),
-    "General":      ("📄",  "#8B949E"),
+    "General":      ("📄",  "#7A8FA8"),
 }
 _LIT_ORDER = ["Metabolism","Toxicity","Resistance","Pharmacology","Clinical","Synthesis","General"]
 
@@ -435,7 +993,7 @@ def _lit_paper_card(paper: dict, accent: str) -> None:
     meta = "  ·  ".join(parts)
     url  = paper.get("url", "")
     link = (f'<a href="{url}" target="_blank" style="color:{accent};'
-            f'font-size:0.79rem;text-decoration:none;">🔗 View</a>') if url else ""
+            f'font-size:0.77rem;text-decoration:none;font-weight:600;">🔗 View</a>') if url else ""
     abs_html = (f'<div class="lit-abs">"{paper["abstract"]}"</div>'
                 if paper.get("abstract") else "")
     st.markdown(
@@ -501,7 +1059,7 @@ def render_literature_intelligence(pubchem_metadata: dict, key_prefix: str = "")
         reason = res.get("_empty_reason", "")
         st.markdown(
             '<div class="lit-empty">📭 No papers found for this compound.'
-            + (f"<br><small style='color:#8B949E'>{reason}</small>" if reason else "")
+            + (f"<br><small style='color:#7A8FA8'>{reason}</small>" if reason else "")
             + "</div>",
             unsafe_allow_html=True,
         )
@@ -513,7 +1071,7 @@ def render_literature_intelligence(pubchem_metadata: dict, key_prefix: str = "")
 
     pills = f'<span class="lit-pill">🗂️ {total} paper{"s" if total!=1 else ""}</span>'
     for cat, papers in cats.items():
-        em, _ = _LIT_CATS.get(cat, ("📄", "#8B949E"))
+        em, _ = _LIT_CATS.get(cat, ("📄", "#7A8FA8"))
         pills += f'<span class="lit-pill">{em} {cat}: {len(papers)}</span>'
     if src and src != "none":
         pills += f'<span class="lit-source" style="margin-left:8px;">via {src}</span>'
@@ -525,11 +1083,11 @@ def render_literature_intelligence(pubchem_metadata: dict, key_prefix: str = "")
         papers = cats.get(cat, [])
         if not papers:
             continue
-        em, ac = _LIT_CATS.get(cat, ("📄", "#8B949E"))
+        em, ac = _LIT_CATS.get(cat, ("📄", "#7A8FA8"))
         n = len(papers)
         st.markdown(
             f'<div class="lit-cat" style="--ac:{ac};">{em} {cat} '
-            f'<span style="font-size:0.8rem;font-weight:400;color:#8B949E;">'
+            f'<span style="font-size:0.78rem;font-weight:400;color:#7A8FA8;">'
             f'({n} paper{"s" if n!=1 else ""})</span></div>',
             unsafe_allow_html=True,
         )
@@ -542,43 +1100,22 @@ def render_literature_intelligence(pubchem_metadata: dict, key_prefix: str = "")
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _render_scope_banner() -> None:
-    """
-    Displays a concise scope notice before the SMILES input.
-    Tells users exactly what molecule types this tool is and isn't designed for.
-    Does NOT block input — purely informational.
-    """
     st.markdown("""
-<div style="background:#161B22;border:1px solid #30363D;border-left:4px solid #58A6FF;
-border-radius:6px;padding:12px 16px;margin-bottom:12px;">
-<div style="font-size:0.88rem;font-weight:700;color:#58A6FF;margin-bottom:6px;">
-🎯 Designed for drug-like organic small molecules</div>
-<div style="font-size:0.82rem;color:#8B949E;line-height:1.7;">
-<b style="color:#C9D1D9;">Works well with:</b> oral drug candidates, investigational compounds,
-natural product derivatives, synthetic intermediates with MW 150–800 Da.<br>
-<b style="color:#C9D1D9;">Limited accuracy for:</b> heavy metals, inorganic salts, simple
-industrial solvents, polymers, biologics, or any molecule with fewer than 5 heavy atoms.<br>
-<b style="color:#C9D1D9;">All outputs are rule-based structural predictions</b> —
-not a substitute for experimental ADME data.
-</div>
+<div class="scope-banner">
+  <div class="scope-title">🎯 Designed for drug-like organic small molecules</div>
+  <div class="scope-body">
+    <b style="color:#EDF4FF;">Works well with:</b> oral drug candidates, investigational compounds,
+    natural product derivatives, synthetic intermediates with MW 150–800 Da.<br>
+    <b style="color:#EDF4FF;">Limited accuracy for:</b> heavy metals, inorganic salts, simple
+    industrial solvents, polymers, biologics, or any molecule with fewer than 5 heavy atoms.<br>
+    <b style="color:#EDF4FF;">All outputs are rule-based structural predictions</b> —
+    not a substitute for experimental ADME data.
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
 
 def _out_of_scope_warning(result: dict) -> None:
-    """
-    Checks the analysed molecule against out-of-scope criteria and renders
-    a contextual warning if any are triggered.
-    Does NOT block or hide results — the analysis is still shown in full.
-
-    Out-of-scope triggers
-    ---------------------
-    - Heavy metal atoms present (Pb, Hg, As, Cd, Fe, Cu, Zn, Ni, Co, Cr, Mn, Se, Tl)
-    - Molecular weight < 150 Da  (too small — simple solvent / reagent territory)
-    - Molecular weight > 900 Da  (too large — outside oral small-molecule space)
-    - Zero carbon atoms          (inorganic compound)
-    - Fewer than 5 heavy atoms   (trivially simple — no meaningful ADME)
-    - Zero rings AND MW < 200    (acyclic, very small — likely industrial chemical)
-    """
     from rdkit import Chem
     from rdkit.Chem import rdMolDescriptors, Descriptors
 
@@ -590,8 +1127,7 @@ def _out_of_scope_warning(result: dict) -> None:
     mw       = props.get("molecular_weight", 0)
     warnings = []
 
-    # ── Check 1: heavy metals ────────────────────────────────────────────────
-    HEAVY_METALS = {82, 80, 33, 48, 26, 29, 30, 28, 27, 24, 25, 34, 81}  # atomic nums
+    HEAVY_METALS = {82, 80, 33, 48, 26, 29, 30, 28, 27, 24, 25, 34, 81}
     metal_symbols = []
     for atom in mol.GetAtoms():
         if atom.GetAtomicNum() in HEAVY_METALS:
@@ -604,7 +1140,6 @@ def _out_of_scope_warning(result: dict) -> None:
             "microsomal stability outputs are not meaningful for metal-containing compounds."
         )
 
-    # ── Check 2: MW too small ────────────────────────────────────────────────
     if mw < 150:
         warnings.append(
             f"**Molecular weight is very low ({mw:.0f} Da)** — "
@@ -612,7 +1147,6 @@ def _out_of_scope_warning(result: dict) -> None:
             "not drug candidates. Lipinski and permeability scores are unreliable at this size."
         )
 
-    # ── Check 3: MW too large ────────────────────────────────────────────────
     if mw > 900:
         warnings.append(
             f"**Molecular weight is very high ({mw:.0f} Da)** — "
@@ -620,7 +1154,6 @@ def _out_of_scope_warning(result: dict) -> None:
             "Above 900 Da, Lipinski rules and Caco-2 predictions lose validity."
         )
 
-    # ── Check 4: no carbon atoms (inorganic) ─────────────────────────────────
     carbon_count = sum(1 for a in mol.GetAtoms() if a.GetAtomicNum() == 6)
     if carbon_count == 0:
         warnings.append(
@@ -628,7 +1161,6 @@ def _out_of_scope_warning(result: dict) -> None:
             "All ADME modules assume organic chemistry. Results are not meaningful."
         )
 
-    # ── Check 5: too few heavy atoms ─────────────────────────────────────────
     heavy_atom_count = mol.GetNumHeavyAtoms()
     if heavy_atom_count < 5:
         warnings.append(
@@ -636,7 +1168,6 @@ def _out_of_scope_warning(result: dict) -> None:
             "this molecule is too simple to produce meaningful drug-likeness predictions."
         )
 
-    # ── Check 6: acyclic + very small ────────────────────────────────────────
     ring_count = rdMolDescriptors.CalcNumRings(mol)
     if ring_count == 0 and mw < 200:
         warnings.append(
@@ -648,31 +1179,38 @@ def _out_of_scope_warning(result: dict) -> None:
     if not warnings:
         return
 
-    # ── Render ───────────────────────────────────────────────────────────────
-    st.markdown("""
-<div style="background:#1C1208;border:1px solid #D29922;border-left:4px solid #D29922;
-border-radius:6px;padding:12px 16px;margin:12px 0;">
-<div style="font-size:0.88rem;font-weight:700;color:#D29922;margin-bottom:6px;">
-⚠️ Out-of-scope molecule detected — results should be interpreted with caution</div>
-""" + "".join(
-        f'<div style="font-size:0.82rem;color:#C9D1D9;margin-bottom:4px;">▸ {w}</div>'
-        for w in warnings
-    ) + """
-<div style="font-size:0.79rem;color:#8B949E;margin-top:8px;">
-The full analysis is still shown below — but the values above are not pharmacologically
-meaningful for this molecule type. LeadRefine is designed for drug-like organic
-small molecules (MW 150–900 Da, carbon-containing, structurally complex).
-</div></div>
-""", unsafe_allow_html=True)
-
-
+    items_html = "".join(
+        f'<div class="oos-item">▸ {w}</div>' for w in warnings
+    )
+    st.markdown(
+        f'<div class="oos-banner">'
+        f'<div class="oos-title">⚠️ Out-of-scope molecule detected — interpret results with caution</div>'
+        + items_html +
+        f'<div class="oos-footer">'
+        f'The full analysis is still shown below — but the values above are not pharmacologically '
+        f'meaningful for this molecule type. LeadRefine is designed for drug-like organic '
+        f'small molecules (MW 150–900 Da, carbon-containing, structurally complex).'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🧬 ADME Analyzer")
-    st.markdown("---")
+    st.markdown("""
+<div class="sb-brand">
+  <div class="sb-icon">🧬</div>
+  <div>
+    <div class="sb-name">LeadRefine</div>
+    <div class="sb-tagline">ADME Analysis Platform</div>
+  </div>
+</div>
+<hr class="sb-divider">
+""", unsafe_allow_html=True)
+
     mode = st.radio("Mode", ["Single molecule", "Batch (multiple SMILES)"])
+
+    st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
 
     fetch_pubchem = st.toggle(
         "🔗 Fetch PubChem data",
@@ -685,7 +1223,7 @@ with st.sidebar:
     else:
         st.info("⚡ Fast mode — PubChem section skipped.")
 
-    st.markdown("---")
+    st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
     st.markdown("**Demo molecules**")
     demos = {
         "Aspirin":      "CC(=O)Oc1ccccc1C(=O)O",
@@ -696,11 +1234,15 @@ with st.sidebar:
         "Morphine":     "OC1=CC=C2CC3N(CCC34CCc5c4cc(O)c(c5)OC)C2=C1",
     }
     selected_demo = st.selectbox("Load a demo", ["— select —"] + list(demos.keys()))
-    st.markdown("---")
+    st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
     st.caption("Rule-based screening.\nNot a substitute for experimental data.")
 
 
 # ── Title + Glossary (always shown) ──────────────────────────────────────────
+st.markdown(
+    '<div class="brand-badge"><span class="brand-dot"></span>Rule-based · Structural Prediction</div>',
+    unsafe_allow_html=True,
+)
 st.title("🧬 ADME Analysis Dashboard")
 st.markdown(
     "Screen molecules for drug-likeness, metabolic stability, toxicophore alerts, "
@@ -739,10 +1281,8 @@ if mode == "Single molecule":
     result = st.session_state.get("single_result")
     if result and result.get("valid"):
 
-        # Out-of-scope check (shown before anything else)
         _out_of_scope_warning(result)
 
-        # KPI
         st.markdown("---")
         k1, k2, k3, k4, k5 = st.columns(5)
         d_icon = "🟢" if result["decision"]=="ACCEPT" else "🔴"
@@ -752,20 +1292,16 @@ if mode == "Single molecule":
         k4.metric("Lipinski",    "✅ PASS" if result["lipinski"]["passes"] else "❌ FAIL")
         k5.metric("Tox Alerts",  result["toxicophore_summary"]["total_toxicophore_alerts"])
 
-        # Charts
         st.markdown(sh("📊 ADME Charts"), unsafe_allow_html=True)
         render_panels(result, key_prefix="single")
 
-        # PubChem
         st.markdown(sh("🔗 PubChem Information"), unsafe_allow_html=True)
         render_pubchem(result.get("pubchem_metadata", {}))
 
-        # Detail
         st.markdown(sh("🔬 Detailed Analysis"), unsafe_allow_html=True)
         st.caption("Click any section to expand.")
         render_detail(result)
 
-        # Literature Intelligence
         st.markdown("---")
         render_literature_intelligence(
             pubchem_metadata=result.get("pubchem_metadata", {}),
@@ -824,7 +1360,6 @@ else:
                 for r in invalid: st.markdown(f"- `{r['smiles']}`")
         if not valid: st.stop()
 
-        # Summary table
         st.markdown("---")
         st.markdown(sh("📋 Results Summary"), unsafe_allow_html=True)
         import pandas as pd
@@ -845,7 +1380,6 @@ else:
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-        # Per-molecule reports
         st.markdown("---")
         st.markdown(sh("📊 Individual Reports"), unsafe_allow_html=True)
         for i, r in enumerate(valid):
@@ -876,7 +1410,6 @@ else:
                 st.markdown(sub("🔬 Detailed Analysis"), unsafe_allow_html=True)
                 render_detail(r)
 
-                # Literature Intelligence
                 st.markdown("---")
                 render_literature_intelligence(
                     pubchem_metadata=r.get("pubchem_metadata", {}),
